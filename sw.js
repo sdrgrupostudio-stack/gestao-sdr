@@ -1,5 +1,5 @@
 // Service worker: deixa o app abrir rápido e funcionar com internet fraca.
-const V = 'gestao-sdr-v3';
+const V = 'gestao-sdr-v5';
 const SHELL = ['./', './index.html', './config.js', './manifest.json', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(V).then(c => c.addAll(SHELL))); self.skipWaiting(); });
 self.addEventListener('activate', e => {
@@ -20,4 +20,14 @@ self.addEventListener('fetch', e => {
     e.respondWith(caches.match(e.request).then(r => r || fetch(e.request).then(res => { const cp = res.clone(); caches.open(V).then(c => c.put(e.request, cp)); return res; })));
   }
   // Dados do Firestore e login: sempre direto pela internet (o Firebase cuida do modo offline).
+});
+
+// Ao tocar num alerta, abre o app.
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || './';
+  e.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then(ws => {
+    for (const w of ws) { if ('focus' in w) return w.focus(); }
+    return clients.openWindow(url);
+  }));
 });
