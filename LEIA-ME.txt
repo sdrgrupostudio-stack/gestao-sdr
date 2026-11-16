@@ -1,0 +1,64 @@
+GESTÃO SDR · GRUPO STUDIO MAIS — COMO COLOCAR NO AR
+====================================================
+
+São 3 etapas: (A) criar o Firebase, (B) publicar no GitHub Pages, (C) instalar nos celulares.
+Tempo total: uns 20 minutos, uma única vez.
+
+----------------------------------------------------
+A) FIREBASE (onde os dados ficam guardados)
+----------------------------------------------------
+1. Entre em https://console.firebase.google.com com a conta Google da empresa.
+2. "Criar um projeto" → nome: gestao-sdr → pode desativar o Google Analytics → Criar.
+3. Na tela do projeto, clique no ícone </> (Web) para "Adicionar app".
+   Apelido: Gestão SDR. NÃO marque Firebase Hosting. → Registrar app.
+4. Vai aparecer um bloco "const firebaseConfig = { apiKey: ... }". COPIE esse bloco inteiro.
+5. Menu da esquerda → Criação → Authentication → Vamos começar
+   → aba "Método de login" → "E-mail/senha" → Ativar (só a primeira chave) → Salvar.
+6. Ainda em Authentication → aba "Usuários" → "Adicionar usuário".
+   Crie um para cada pessoa: você, a SDR e a pessoa do tráfego (e-mail + senha provisória).
+   (Cada pessoa pode depois usar "Esqueci minha senha" no app para criar a própria senha.)
+7. Authentication → aba "Configurações" → "Ações do usuário":
+   DESMARQUE "Ativar criação (inscrição)". Assim ninguém de fora cria conta.
+8. Menu da esquerda → Criação → Firestore Database → Criar banco de dados
+   → local: southamerica-east1 (São Paulo) → "Iniciar no modo de produção" → Criar.
+9. No Firestore, aba "Regras": apague tudo, cole o conteúdo do arquivo firestore.rules
+   (que está nesta pasta) e clique em Publicar.
+
+----------------------------------------------------
+B) PUBLICAR O APP (GitHub Pages, gratuito)
+----------------------------------------------------
+1. Entre em https://github.com → botão "New" (novo repositório).
+   Nome: gestao-sdr → Public → Create repository.
+2. Clique em "uploading an existing file" e arraste TODOS os arquivos desta pasta
+   (index.html, config.js, manifest.json, sw.js, os 3 ícones .png, firestore.rules, LEIA-ME.txt)
+   → Commit changes.
+3. No repositório, clique no arquivo config.js → ícone do lápis (Edit).
+   Troque a última linha  window.FIREBASE_CONFIG = null;  por:
+       window.FIREBASE_CONFIG = { ...cole aqui o que está entre as chaves do firebaseConfig... };
+   → Commit changes.
+   (Se preferir, mande o bloco firebaseConfig para o Claude que ele devolve o config.js pronto.
+    Esse bloco não é senha: ele só identifica o projeto.)
+4. Settings → Pages → em "Branch" escolha "main" e "/ (root)" → Save.
+   Em 1 a 2 minutos o endereço aparece no topo, algo como:
+   https://SEU-USUARIO.github.io/gestao-sdr/
+5. Volte ao Firebase → Authentication → Configurações → "Domínios autorizados"
+   → Adicionar domínio → SEU-USUARIO.github.io  (sem https e sem /gestao-sdr).
+
+----------------------------------------------------
+C) INSTALAR NOS CELULARES
+----------------------------------------------------
+Android (Chrome): abra o endereço → entre com e-mail e senha → botão "Instalar app"
+   no topo (ou menu ⋮ → "Instalar app").
+iPhone (Safari): abra o endereço → Compartilhar (quadrado com seta) →
+   "Adicionar à Tela de Início" → Adicionar.
+Computador (Chrome/Edge): ícone de instalar na barra de endereço.
+
+Depois de instalado, o app abre como qualquer outro, funciona com internet fraca
+e envia as alterações quando a conexão volta.
+
+----------------------------------------------------
+ATUALIZAÇÕES
+----------------------------------------------------
+Quando receber uma versão nova do index.html, é só subir no GitHub por cima do antigo
+(Add file → Upload files). Os celulares pegam a versão nova sozinhos ao abrir o app.
+Não suba um config.js novo por cima do seu, senão perde a configuração do Firebase.
