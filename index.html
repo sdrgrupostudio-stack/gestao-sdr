@@ -292,13 +292,18 @@ async function init(){
   auth.onAuthStateChanged(u=>{
     unsubs.forEach(f=>{try{f()}catch(e){}});unsubs=[];
     Object.values(S.subs).forEach(f=>{try{f()}catch(e){}});S.subs={};
-    S.role=null;S.dono=undefined;S.usersReady=false;S.names={};
+    S.role=null;S.dono=undefined;S.usersReady=false;S.donoOk=false;S.forceReady=false;S.namesLoaded=false;S.names={};clearTimeout(S.readyT);
     if(!u){S.me=null;S.leads=[];S.traf=[];S.config=null;closeDrawer();showLogin();return}
     S.me=u.uid;S.mode='online';
-    gate('<div class="gbox">'+LOGO+'<h2>Carregando…</h2><p class="mut">Conferindo seu acesso.</p></div>');
-    unsubs.push(db.doc('acesso/dono').onSnapshot(d=>{S.dono=d.exists?(d.data()||{}).uid||null:null;applyRole()},onErr));
+    gate('<div class="gbox">'+LOGO+'<h2>Carregando…</h2><p class="mut">Conferindo seu acesso.</p><button class="btn" style="margin-top:8px" data-act="sairJa">Sair</button></div>');
+    // Se o servidor demorar (internet fraca), segue com os dados guardados no aparelho.
+    S.readyT=setTimeout(()=>{S.forceReady=true;
+      if(S.dono===undefined||!S.namesLoaded)gate('<div class="gbox">'+LOGO+'<h2>Não consegui carregar</h2><p class="mut">Verifique a internet e tente de novo.</p><button class="btn pri" onclick="location.reload()">Tentar de novo</button> <button class="btn" data-act="sairJa">Sair</button></div>');
+      else applyRole()},6000);
+    const MD={includeMetadataChanges:true};
+    unsubs.push(db.doc('acesso/dono').onSnapshot(MD,d=>{S.dono=d.exists?(d.data()||{}).uid||null:null;if(!d.metadata.fromCache)S.donoOk=true;applyRole()},e=>{S.donoOk=true;S.dono=S.dono===undefined?null:S.dono;onErr(e);applyRole()}));
     unsubs.push(db.doc('config/geral').onSnapshot(d=>{S.config=d.exists?d.data():null;renderAll()},onErr));
-    unsubs.push(db.collection('usuarios').onSnapshot(snap=>{S.names={};snap.docs.forEach(d=>S.names[d.id]=d.data());
+    unsubs.push(db.collection('usuarios').onSnapshot(MD,snap=>{S.names={};S.namesLoaded=true;snap.docs.forEach(d=>S.names[d.id]=d.data());
       if(!snap.metadata.fromCache){S.usersReady=true;if(!S.names[u.uid])saveMyName((u.email||'').split('@')[0])}
       applyRole()},onErr));
   });
@@ -307,7 +312,9 @@ function onErr(e){if(/permission/.test((e&&e.code)||''))toast('Sem permissão pa
 const ROLE_VIEWS={gerente:['hoje','funil','leads','painel','trafego','scripts','config'],sdr:['hoje','funil','leads'],trafego:['trafego']};
 const rv=()=>ROLE_VIEWS[S.role]||['hoje'];
 function applyRole(){
-  if(S.dono===undefined||!S.usersReady)return;
+  if(S.dono===undefined||!S.namesLoaded)return;
+  if(!((S.donoOk&&S.usersReady)||S.forceReady))return;
+  clearTimeout(S.readyT);
   const r=S.dono===S.me?'gerente':((S.names[S.me]||{}).perfil||'');
   if(r!==S.role){
     S.role=r;['leads','trafego'].forEach(k=>{if(S.subs[k]){try{S.subs[k]()}catch(e){}delete S.subs[k]}});

@@ -1,5 +1,5 @@
 // Service worker: deixa o app abrir rápido e funcionar com internet fraca.
-const V = 'gestao-sdr-v2';
+const V = 'gestao-sdr-v3';
 const SHELL = ['./', './index.html', './config.js', './manifest.json', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(V).then(c => c.addAll(SHELL))); self.skipWaiting(); });
 self.addEventListener('activate', e => {
