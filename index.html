@@ -127,6 +127,7 @@ label{display:block;font-size:12px;font-weight:600;color:var(--mut);margin-botto
 .mut{color:var(--mut)}.b{font-weight:600}.r{text-align:right}
 .ro .w{display:none!important}
 .alert{color:var(--bad);font-weight:600}
+body.r-traf [data-act=novo]{display:none!important}
 #gate{position:fixed;inset:0;background:var(--pri);z-index:100;display:none;align-items:center;justify-content:center;padding:18px;overflow:auto}
 #gate.on{display:flex}
 .gbox{background:#fff;border-radius:16px;padding:26px;width:min(440px,100%)}
@@ -231,7 +232,7 @@ const SCRIPTS_DEF=[
 ];
 
 /* ============ estado ============ */
-const S={traf:[],perT:'sem',editTraf:null,leads:[],config:null,me:null,mode:'loading',ro:false,names:{},per:'mes',filt:{q:'',et:'',or:'',lj:'',emp:'',plat:''},drawer:null,editScripts:false};
+const S={role:null,dono:undefined,usersReady:false,subs:{},traf:[],perT:'sem',editTraf:null,leads:[],config:null,me:null,mode:'loading',ro:false,names:{},per:'mes',filt:{q:'',et:'',or:'',lj:'',emp:'',plat:''},drawer:null,editScripts:false};
 let db=null,user=null;
 function cfg(){const c=S.config||{};return Object.assign({},DEF,c,{metas:Object.assign({},DEF.metas,c.metas||{})})}
 const scripts=()=>(cfg().scripts&&cfg().scripts.length)?cfg().scripts:SCRIPTS_DEF;
@@ -290,15 +291,40 @@ async function init(){
   try{await db.enablePersistence({synchronizeTabs:true})}catch(e){}
   auth.onAuthStateChanged(u=>{
     unsubs.forEach(f=>{try{f()}catch(e){}});unsubs=[];
+    Object.values(S.subs).forEach(f=>{try{f()}catch(e){}});S.subs={};
+    S.role=null;S.dono=undefined;S.usersReady=false;S.names={};
     if(!u){S.me=null;S.leads=[];S.traf=[];S.config=null;closeDrawer();showLogin();return}
-    S.me=u.uid;S.mode='online';ungate();renderAll();
-    const onErr=e=>{if(/permission/.test((e&&e.code)||''))toast('Sem permissão para ler os dados. Confira as regras do Firestore.');else console.error(e)};
-    unsubs.push(db.collection('leads').onSnapshot(snap=>{S.leads=snap.docs.map(d=>Object.assign({id:d.id},d.data()));renderAll()},onErr));
-    unsubs.push(db.collection('trafego').onSnapshot(snap=>{S.traf=snap.docs.map(d=>Object.assign({id:d.id},d.data()));renderAll()},onErr));
+    S.me=u.uid;S.mode='online';
+    gate('<div class="gbox">'+LOGO+'<h2>Carregando…</h2><p class="mut">Conferindo seu acesso.</p></div>');
+    unsubs.push(db.doc('acesso/dono').onSnapshot(d=>{S.dono=d.exists?(d.data()||{}).uid||null:null;applyRole()},onErr));
     unsubs.push(db.doc('config/geral').onSnapshot(d=>{S.config=d.exists?d.data():null;renderAll()},onErr));
     unsubs.push(db.collection('usuarios').onSnapshot(snap=>{S.names={};snap.docs.forEach(d=>S.names[d.id]=d.data());
-      if(!snap.metadata.fromCache&&!S.names[u.uid])saveMyName((u.email||'').split('@')[0]);renderAll()},onErr));
+      if(!snap.metadata.fromCache){S.usersReady=true;if(!S.names[u.uid])saveMyName((u.email||'').split('@')[0])}
+      applyRole()},onErr));
   });
+}
+function onErr(e){if(/permission/.test((e&&e.code)||''))toast('Sem permissão para ler alguns dados.');else console.error(e)}
+const ROLE_VIEWS={gerente:['hoje','funil','leads','painel','trafego','scripts','config'],sdr:['hoje','funil','leads'],trafego:['trafego']};
+const rv=()=>ROLE_VIEWS[S.role]||['hoje'];
+function applyRole(){
+  if(S.dono===undefined||!S.usersReady)return;
+  const r=S.dono===S.me?'gerente':((S.names[S.me]||{}).perfil||'');
+  if(r!==S.role){
+    S.role=r;['leads','trafego'].forEach(k=>{if(S.subs[k]){try{S.subs[k]()}catch(e){}delete S.subs[k]}});
+    S.leads=[];S.traf=[];closeDrawer();
+    if(ROLE_VIEWS[r])S.subs.leads=db.collection('leads').onSnapshot(snap=>{S.leads=snap.docs.map(d=>Object.assign({id:d.id},d.data()));renderAll()},onErr);
+    if(r==='gerente'||r==='trafego')S.subs.trafego=db.collection('trafego').onSnapshot(snap=>{S.traf=snap.docs.map(d=>Object.assign({id:d.id},d.data()));renderAll()},onErr);
+    if(ROLE_VIEWS[r]){ungate();if(!rv().includes(location.hash.slice(1)))history.replaceState(null,'','#'+rv()[0])}
+  }
+  if(!ROLE_VIEWS[r])showSemAcesso();
+  renderAll();
+}
+function showSemAcesso(){
+  const em=(auth&&auth.currentUser&&auth.currentUser.email)||'';
+  gate(`<div class="gbox">${LOGO}<h2>Acesso aguardando liberação</h2>
+  ${S.dono?`<p class="mut">Seu login <b>${esc(em)}</b> já está cadastrado. Peça ao gerente para liberar seu acesso em <b>Configurações → Usuários e acessos</b>. Quando ele liberar, o app abre sozinho.</p>`
+  :`<p class="mut">Ainda não há um gerente definido neste app. Se você é o gerente, toque no botão abaixo. Isso só pode ser feito uma vez.</p><button class="btn pri" style="width:100%;justify-content:center;margin-bottom:10px" data-act="assumir">Sou o gerente: assumir o controle</button>`}
+  <button class="btn" style="width:100%;justify-content:center" data-act="sairJa">Sair</button></div>`);
 }
 
 /* ============ regras de negócio ============ */
@@ -371,12 +397,12 @@ function metrics(from,to){
 
 /* ============ navegação ============ */
 const VIEWS=[{k:'hoje',l:'Meu dia'},{k:'funil',l:'Funil'},{k:'leads',l:'Leads'},{k:'painel',l:'Painel da gerência'},{k:'trafego',l:'Tráfego'},{k:'scripts',l:'Scripts'},{k:'config',l:'Configurações'}];
-const view=()=>{const h=location.hash.slice(1);return VIEWS.some(v=>v.k===h)?h:'hoje'};
+const view=()=>{const h=location.hash.slice(1);return rv().includes(h)?h:rv()[0]};
 window.addEventListener('hashchange',()=>{if(S.drawer)closeDrawer();S.editScripts=false;renderAll()});
 
 function renderNav(){
   const pend=pendentesHoje().length;
-  $('#nav').innerHTML=VIEWS.map(v=>`<a href="#${v.k}" class="${view()===v.k?'on':''}">${v.l}${v.k==='hoje'&&pend?`<span class="cnt">${pend}</span>`:''}</a>`).join('');
+  $('#nav').innerHTML=VIEWS.filter(v=>rv().includes(v.k)).map(v=>`<a href="#${v.k}" class="${view()===v.k?'on':''}">${v.l}${v.k==='hoje'&&pend?`<span class="cnt">${pend}</span>`:''}</a>`).join('');
 }
 function banner(){
   if(!navigator.onLine)return `<div class="banner warn">Sem internet. Pode continuar usando: as alterações são enviadas quando a conexão voltar.</div>`;
@@ -384,7 +410,7 @@ function banner(){
 }
 window.addEventListener('online',()=>renderAll());window.addEventListener('offline',()=>renderAll());
 function renderAll(){
-  document.body.classList.toggle('ro',S.ro);
+  document.body.classList.toggle('ro',S.ro);document.body.classList.toggle('r-traf',S.role==='trafego');
   renderNav();
   const v=view();const app=$('#app');
   const html={trafego:vTrafego,hoje:vHoje,funil:vFunil,leads:vLeads,painel:vPainel,scripts:vScripts,config:vConfig}[v]();
@@ -636,6 +662,7 @@ function vConfig(){
   const num=(k,l)=>`<div class="fg"><label>${l}</label><input type="number" min="0" id="m_${k}" value="${m[k]}"></div>`;
   return `<h1>Configurações</h1><p class="sub">Metas, cadência e listas usadas no app. Vale para todos que usam este link.</p>
   <div class="grid g2">
+    ${usersCard()}
     <div class="card"><h2>SDR e metas</h2>
       <div class="fg"><label>Seu nome (aparece no histórico e nos lançamentos)</label><input id="cf_meuNome" value="${esc((S.names[S.me]||{}).nome||'')}"></div>
       <div class="fg"><label>Nome da SDR (aparece nas mensagens)</label><input id="cf_sdrNome" value="${esc(c.sdrNome)}" placeholder="Ex.: Juliana"></div>
@@ -646,6 +673,13 @@ function vConfig(){
     <div class="card"><h2>Listas</h2><div class="f2">${ta('empresas','Empresas')}${ta('plataformas','Plataformas')}${ta('origens','Origens do lead')}${ta('lojas','Lojas')}${ta('vendedores','Vendedores / consultores')}${ta('interesses','Produtos de interesse')}</div>${ta('motivos','Motivos de perda')}</div>
   </div>
   <div class="filters w" style="margin-top:16px"><div class="sp"></div><button class="btn pri" data-act="cfgSave">Salvar configurações</button></div>`;
+}
+function usersCard(){
+  const ids=Object.keys(S.names).sort((a,b)=>nameOf(a).localeCompare(nameOf(b)));
+  const P=[['','Sem acesso'],['sdr','SDR: Meu dia, Funil e Leads'],['trafego','Tráfego: só a aba Tráfego'],['gerente','Gerente: tudo']];
+  return `<div class="card"><h2>Usuários e acessos</h2><p class="mut" style="font-size:13px;margin-top:-6px">A pessoa aparece aqui depois de entrar no app pela primeira vez. Escolha o que ela pode ver; vale na hora.</p>
+  <div class="list">${ids.map(id=>{const u=S.names[id]||{};return `<div class="row"><div class="main" style="cursor:default"><div class="nm">${esc(u.nome||u.email||'Usuário')}${id===S.me?' (você)':''}</div><div class="meta">${esc(u.email||'')}</div></div>
+  ${id===S.dono?'<span class="pill pri">Gerente principal</span>':`<select data-perfil="${id}" style="width:auto;max-width:210px">${P.map(([k,l])=>`<option value="${k}" ${(u.perfil||'')===k?'selected':''}>${l}</option>`).join('')}</select>`}</div>`}).join('')||'<div class="empty">Ninguém além de você entrou ainda.</div>'}</div></div>`;
 }
 function cadRow(p,i){return `<div class="cadrow" data-cad="${i}"><input type="number" min="0" value="${p.dia}" data-cf="dia" title="Dia"><select data-cf="canal">${CANAIS.map(c=>`<option ${c===p.canal?'selected':''}>${c}</option>`).join('')}</select><input value="${esc(p.acao)}" data-cf="acao"><button class="btn sm ghost" data-act="cadDel" data-i="${i}" title="Remover">✕</button></div>`}
 function readCad(){return [...document.querySelectorAll('[data-cad]')].map(r=>({dia:+r.querySelector('[data-cf=dia]').value||0,canal:r.querySelector('[data-cf=canal]').value,acao:r.querySelector('[data-cf=acao]').value.trim()})).filter(p=>p.acao).sort((a,b)=>a.dia-b.dia)}
@@ -742,6 +776,11 @@ async function act(a,el){
   const L=()=>{const x=getLead(id);return x?clone(x):null};
   try{switch(a){
   case 'novo':openNovo();break;
+  case 'assumir':{if(S.dono){toast('O gerente já foi definido.');return}el.textContent='Configurando…';
+    try{const em=(auth.currentUser&&auth.currentUser.email)||'';await db.doc('acesso/dono').set({uid:S.me,email:em,em:Date.now()});
+      await db.collection('usuarios').doc(S.me).set({perfil:'gerente',email:em},{merge:true});toast('Pronto! Você é o gerente do app.')}
+    catch(e2){el.textContent='Sou o gerente: assumir o controle';toast('Não foi possível: confira se as regras novas do Firebase foram publicadas.')}break}
+  case 'sairJa':auth&&auth.signOut();break;
   case 'fbSave':{const c=parseConf($('#fbconf').value);if(!c){$('#gate .err').textContent='Não encontrei apiKey, projectId e appId no texto colado.';return}
     localStorage.setItem('sdr_fbconf',JSON.stringify(c));location.reload();break}
   case 'login':{const em=$('#lg_email').value.trim(),pw=$('#lg_pass').value;if(!em||!pw){$('#lg_err').textContent='Preencha e-mail e senha.';return}
@@ -749,7 +788,7 @@ async function act(a,el){
     try{await auth.signInWithEmailAndPassword(em,pw)}catch(e2){const er=$('#lg_err');if(er)er.textContent=authMsg(e2);const bt=$('#lg_btn');if(bt)bt.textContent='Entrar'}break}
   case 'reset':{const em=$('#lg_email').value.trim();if(!em){$('#lg_err').textContent='Digite seu e-mail acima e clique de novo.';return}
     try{await auth.sendPasswordResetEmail(em);$('#lg_err').textContent='';toast('Enviamos um link para criar nova senha no seu e-mail.')}catch(e2){$('#lg_err').textContent=authMsg(e2)}break}
-  case 'sair':if(!el.dataset.ok){el.dataset.ok=1;el.textContent='Confirmar saída';setTimeout(()=>{el.textContent='Sair';delete el.dataset.ok},3000);return}auth&&auth.signOut();break;
+  case 'sair':if(!el.dataset.ok){el.dataset.ok=1;el.textContent='Confirmar saída';setTimeout(()=>{el.textContent='Sair';delete el.dataset.ok},3000);return}el.textContent='Sair';delete el.dataset.ok;auth&&auth.signOut();break;
   case 'instalar':{if(deferredPrompt){deferredPrompt.prompt();deferredPrompt=null;$('#btnInst').style.display='none'}
     else{$('#mbox').innerHTML='<h2 style="font-size:17px">Instalar no iPhone</h2><p>1. Toque no botão <b>Compartilhar</b> do Safari (quadrado com seta para cima).</p><p>2. Escolha <b>Adicionar à Tela de Início</b>.</p><p>3. Toque em <b>Adicionar</b>. O ícone do app aparece na tela.</p><div style="text-align:right"><button class="btn pri" data-act="mfechar">Entendi</button></div>';$('#modal').classList.add('on')}break}
   case 'mfechar':$('#modal').classList.remove('on');break;
@@ -838,11 +877,12 @@ document.addEventListener('click',e=>{
   const el=e.target.closest('[data-act]');if(!el)return;
   if(el.tagName==='A'&&el.getAttribute('href'))return;
   const a=el.dataset.act;
-  if(S.ro&&!['fbSave','login','reset','sair','instalar','perT','abrir','fechar','per','copiar','csv','mfechar','scCancel'].includes(a))return;
+  if(S.ro&&!['assumir','sairJa','fbSave','login','reset','sair','instalar','perT','abrir','fechar','per','copiar','csv','mfechar','scCancel'].includes(a))return;
   e.preventDefault();act(a,el);
 });
 document.addEventListener('change',async e=>{
   const t=e.target;
+  if(t.dataset.perfil){if(S.role!=='gerente')return;const v=t.value;fire(db.collection('usuarios').doc(t.dataset.perfil).set({perfil:v},{merge:true}));toast(v?'Acesso atualizado':'Acesso removido');return}
   if(t.dataset.filt){S.filt[t.dataset.filt]=t.value;if(t.dataset.filt!=='q')renderAll();return}
   if(t.dataset.q&&S.drawer){
     const l=clone(getLead(S.drawer.id));l.qual=l.qual||{};l.qual[t.dataset.q]=t.checked;
